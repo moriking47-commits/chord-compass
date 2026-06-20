@@ -72,11 +72,13 @@
   .piano-top .replay{margin-left:auto;background:var(--ember);color:#1a0f08;border:none;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;}
   .piano-top .replay:active{transform:translateY(1px);}
   .piano{position:relative;height:96px;user-select:none;}
-  .key{position:absolute;top:0;border:1px solid;}
+  .key{position:absolute;top:0;border:1px solid;cursor:pointer;}
   .key.white{background:#efe7da;border-color:#c2b8a8;height:96px;border-radius:0 0 4px 4px;z-index:1;}
   .key.black{background:#2a241f;border-color:#1a1512;height:58px;border-radius:0 0 3px 3px;z-index:2;}
   .key.lit.white{background:var(--ember);border-color:var(--ember);}
   .key.lit.black{background:var(--ember);border-color:var(--ember-soft);}
+  .key.tap.white{background:var(--ember-soft);border-color:var(--ember);}
+  .key.tap.black{background:var(--ember-soft);border-color:var(--ember);}
   .key .kl{position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:8px;color:#1a0f08;font-weight:700;pointer-events:none;}
 
   .tablecard{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px;overflow-x:auto;margin-top:12px;}
@@ -112,9 +114,7 @@
     <div class="cg"><label>キー</label><select id="keySel"></select></div>
     <div class="cg"><label>音色</label>
       <select id="voiceSel">
-        <option value="piano">ピアノ</option>
         <option value="epiano">エレピ</option>
-        <option value="guitar">ギター</option>
         <option value="organ">オルガン</option>
         <option value="pad">パッド</option>
         <option value="synth">シンセリード</option>
@@ -155,6 +155,7 @@
         <span class="nm" id="nowName">—</span><span class="tn" id="nowTones"></span>
         <button class="replay" id="replayBtn">鳴らす ♪</button>
       </div>
+      <div style="font-size:10px;color:var(--ink-dim);margin:-4px 0 6px;">鍵盤を押すと単音が鳴る（簡易ピアノ）</div>
       <div class="piano" id="piano"></div>
       <div class="tablecard">
         <div class="tabletitle">コード表：<b id="tableFor">—</b>（<span style="color:var(--green)">緑＝使える</span> / <span style="color:var(--purple)">紫＝借用</span> / <span style="color:var(--blue)">青枠＝おすすめ</span>）</div>
@@ -174,15 +175,13 @@ function m2f(m){return 440*Math.pow(2,(m-69)/12);}
 
 // 音色定義：波形, ADSR(秒), 倍音追加, ビブラート
 const VOICES={
-  piano:  {wave:"triangle", a:0.005,d:0.6,s:0.0,r:0.4,  sustain:0.0,  dur:1.6, detune:0, partials:[{ratio:2,gain:0.15}]},
   epiano: {wave:"sine",     a:0.01, d:0.8,s:0.2,r:0.5,  sustain:0.2,  dur:1.8, detune:0, partials:[{ratio:2,gain:0.2},{ratio:3,gain:0.05}]},
-  guitar: {wave:"sawtooth", a:0.004,d:0.5,s:0.0,r:0.3,  sustain:0.0,  dur:1.3, detune:0, partials:[{ratio:2,gain:0.1}]},
   organ:  {wave:"sine",     a:0.02, d:0.05,s:0.85,r:0.15,sustain:0.85, dur:1.6, detune:0, partials:[{ratio:2,gain:0.5},{ratio:4,gain:0.25}]},
   pad:    {wave:"triangle", a:0.25, d:0.5,s:0.6,r:0.8,  sustain:0.6,  dur:2.2, detune:6, partials:[{ratio:2,gain:0.1}]},
   synth:  {wave:"square",   a:0.01, d:0.2,s:0.5,r:0.3,  sustain:0.5,  dur:1.6, detune:0, partials:[]},
   bell:   {wave:"sine",     a:0.002,d:1.2,s:0.0,r:0.6,  sustain:0.0,  dur:1.8, detune:0, partials:[{ratio:2.76,gain:0.4},{ratio:5.4,gain:0.15}]},
 };
-let curVoice="piano";
+let curVoice="epiano";
 
 function playOneNote(ctx,freq,t0,V,velo){
   const dur=V.dur;
@@ -213,9 +212,14 @@ function playChord(notes,when){
   const ctx=ensureAudio();const t0=(when!=null?when:ctx.currentTime)+0.01;
   const V=VOICES[curVoice]||VOICES.piano;
   notes.forEach((m,i)=>{
-    const strum = (curVoice==="guitar")?i*0.03:i*0.008; // ギターは弦をなぞる感じ
+    const strum = i*0.008;
     playOneNote(ctx,m2f(m),t0+strum,V,0.9);
   });
+}
+function playNote(midi,when){
+  const ctx=ensureAudio();const t0=(when!=null?when:ctx.currentTime)+0.01;
+  const V=VOICES[curVoice]||VOICES.epiano;
+  playOneNote(ctx,m2f(midi),t0,V,0.9);
 }
 
 //============ 理論 ============
@@ -255,26 +259,33 @@ const FUNC_MIN=["T","S","T","S","D","S","D"];
 const FUNC_NAME={T:"トニック（安定・帰る場所）",S:"サブドミナント（動き出す）",D:"ドミナント（緊張・解決したがる）"};
 
 const FAMOUS_DEF={
-  classic:[ // 定番/王道
+  classic_maj:[ // 定番/王道（メジャー）
     {name:"カノン進行", scale:"major", degs:[0,4,5,2,3,0,3,4]},
     {name:"小室進行", scale:"major", degs:[5,3,4,0]},
     {name:"王道4536", scale:"major", degs:[3,4,2,5]},
     {name:"I-V-vi-IV", scale:"major", degs:[0,4,5,3]},
+    {name:"I-vi-IV-V(50s)", scale:"major", degs:[0,5,3,4]},
+  ],
+  classic_min:[ // 定番/王道（マイナー）
     {name:"哀愁 i-VI-III-VII", scale:"minor", degs:[0,5,2,6]},
+    {name:"i-iv-v-i", scale:"minor", degs:[0,3,4,0]},
+    {name:"i-VII-VI-VII", scale:"minor", degs:[0,6,5,6]},
+    {name:"i-VI-VII-i", scale:"minor", degs:[0,5,6,0]},
+    {name:"i-iv-VII-III", scale:"minor", degs:[0,3,6,2]},
   ],
-  edm:[ // EDM/ダンス
-    {name:"vi-IV-I-V", scale:"major", degs:[5,3,0,4]},
-    {name:"I-V-vi-IV循環", scale:"major", degs:[0,4,5,3]},
-    {name:"vi-V-IV-V", scale:"major", degs:[5,4,3,4]},
+  edm_min:[ // EDM/ダンス（マイナー）
     {name:"i-VI-III-VII(EDM短調)", scale:"minor", degs:[0,5,2,6]},
-    {name:"フェス I-IV-vi-V", scale:"major", degs:[0,3,5,4]},
+    {name:"i-VII-VI-V系", scale:"minor", degs:[0,6,5,4]},
+    {name:"i-iv-VI-VII", scale:"minor", degs:[0,3,5,6]},
+    {name:"i-VI-VII-i(ドロップ)", scale:"minor", degs:[0,5,6,0]},
+    {name:"i-III-VII-VI", scale:"minor", degs:[0,2,6,5]},
   ],
-  jazzy:[ // Jazzy
-    {name:"ii-V-I", scale:"major", degs:[1,4,0]},
-    {name:"Just the Two of Us", scale:"major", degs:[3,4,2,5]},
-    {name:"循環 I-vi-ii-V", scale:"major", degs:[0,5,1,4]},
-    {name:"Jazzy ii-V-i(短調)", scale:"minor", degs:[1,4,0]},
+  jazzy_min:[ // Jazzy（マイナー）
+    {name:"ii-V-i(短調)", scale:"minor", degs:[1,4,0]},
     {name:"枯葉系 i-iv-VII-III", scale:"minor", degs:[0,3,6,2]},
+    {name:"i-VI-ii-V", scale:"minor", degs:[0,5,1,4]},
+    {name:"循環(短調) i-iv-VII-III", scale:"minor", degs:[0,3,6,2]},
+    {name:"i-ii-V-i", scale:"minor", degs:[0,1,4,0]},
   ]
 };
 
@@ -285,14 +296,14 @@ function pcSetOf(rootPc,type){return type.ivl.map(i=>(rootPc+i)%12);}
 
 // モード定義
 const MODES=[
-  {id:"circle_maj", label:"① 五度圏（メジャー）", scale:"major"},
-  {id:"circle_min", label:"② 五度圏（マイナー）", scale:"minor"},
-  {id:"major",      label:"③ メジャーおすすめ",   scale:"major"},
-  {id:"minor",      label:"④ マイナー（Jazzy）",   scale:"minor"},
-  {id:"function",   label:"⑤ 機能（T/S/D・解説）", scale:null},
-  {id:"preset_classic", label:"⑥ 定番/王道",  preset:"classic"},
-  {id:"preset_edm",     label:"⑦ EDM",        preset:"edm"},
-  {id:"preset_jazzy",   label:"⑧ Jazzy",      preset:"jazzy"},
+  {id:"circle_maj", label:"五度圏（メジャー）", scale:"major"},
+  {id:"circle_min", label:"五度圏（マイナー）", scale:"minor"},
+  {id:"func_maj",   label:"機能（メジャー）", scale:"major"},
+  {id:"func_min",   label:"機能（マイナー）", scale:"minor"},
+  {id:"preset_classic_maj", label:"定番（メジャー）", preset:"classic_maj", scale:"major"},
+  {id:"preset_classic_min", label:"定番（マイナー）", preset:"classic_min", scale:"minor"},
+  {id:"preset_edm_min",     label:"EDM（マイナー）",  preset:"edm_min",     scale:"minor"},
+  {id:"preset_jazzy_min",   label:"Jazzy（マイナー）",preset:"jazzy_min",   scale:"minor"},
 ];
 
 let st={keyRoot:0,scale:"major",curRoot:0,curType:typeById("maj"),slots:[null,null,null,null],activeSlot:0,mode:"circle_maj",presetIdx:0};
@@ -305,7 +316,7 @@ function curRoman(){return st.scale==="major"?ROMAN_MAJ:ROMAN_MIN;}
 function curFunc(){return st.scale==="major"?FUNC_MAJ:FUNC_MIN;}
 function keyScalePcs(){return curScale().map(i=>(st.keyRoot+i)%12);}
 // jazzyモードは7th、それ以外はトライアド
-function diaTypeArray(){return (st.mode==="minor"||st.mode==="preset_jazzy")?curDia7():curDiaTriad();}
+function diaTypeArray(){return (st.mode==="preset_jazzy_maj"||st.mode==="preset_jazzy_min")?curDia7():curDiaTriad();}
 function keyDiatonic(){const sc=curScale(),d=diaTypeArray();return sc.map((iv,i)=>({pc:(st.keyRoot+iv)%12,deg:i,typeId:d[i]}));}
 function currentDegree(){const dia=keyDiatonic();for(const c of dia){if(c.pc===st.curRoot)return c.deg;}return -1;}
 
@@ -320,7 +331,9 @@ function renderPiano(litMidi){
     const k=document.createElement("div");
     k.className="key white"+(litMidi.includes(midi)?" lit":"");
     k.style.left=(wi*ww)+"%";k.style.width=ww+"%";
+    k.dataset.midi=midi;
     if(litMidi.includes(midi)){const l=document.createElement("div");l.className="kl";l.textContent=NOTE[midi%12];k.appendChild(l);}
+    k.addEventListener("pointerdown",()=>tapKey(k,midi));
     piano.appendChild(k);wi++;
   });}
   const hasBlackAfter={0:true,2:true,5:true,7:true,9:true};wi=0;
@@ -330,10 +343,17 @@ function renderPiano(litMidi){
       const k=document.createElement("div");
       k.className="key black"+(litMidi.includes(midi)?" lit":"");
       k.style.left=((wi+1)*ww - ww*0.32)+"%";k.style.width=(ww*0.64)+"%";
+      k.dataset.midi=midi;
+      k.addEventListener("pointerdown",()=>tapKey(k,midi));
       piano.appendChild(k);
     }
     wi++;
   });}
+}
+function tapKey(el,midi){
+  playNote(midi);
+  el.classList.add("tap");
+  setTimeout(()=>el.classList.remove("tap"),160);
 }
 
 function buildGrid(){
@@ -378,21 +398,21 @@ function getRecommendations(){
   const dia=keyDiatonic();
   const curDeg=currentDegree();
   const mode=st.mode;
-  if(mode==="function"){
+  if(mode==="func_maj"||mode==="func_min"){
     if(curDeg<0)return [];
     const f=curFunc()[curDeg];
     const target=f==="T"?["S","D"]:f==="S"?["D","T"]:["T"];
     return dia.filter(c=>target.includes(curFunc()[c.deg])).map(c=>({pc:c.pc,typeId:c.typeId}));
   }
-  if(mode==="circle_maj"||mode==="circle_min"||mode==="major"||mode==="minor"){
+  if(mode==="circle_maj"||mode==="circle_min"){
     return dia.map(c=>({pc:c.pc,typeId:c.typeId}));
   }
   if(mode.startsWith("preset_")){
     const key=currentMode().preset;const list=FAMOUS_DEF[key];
     const p=list[st.presetIdx%list.length];
-    // プリセットのスケールに合わせる
+    const isJazzy=key.startsWith("jazzy");
     const sc=(p.scale==="major")?SCALE_MAJ:SCALE_MIN;
-    const dty=(p.scale==="major")?(key==="jazzy"?DIA7_MAJ:DIA_MAJ):(key==="jazzy"?DIA7_MIN:DIA_MIN);
+    const dty=(p.scale==="major")?(isJazzy?DIA7_MAJ:DIA_MAJ):(isJazzy?DIA7_MIN:DIA_MIN);
     return p.degs.map(d=>({pc:(st.keyRoot+sc[d])%12,typeId:dty[d]}));
   }
   return [];
@@ -474,9 +494,7 @@ function renderExplain(){
 
   if(mode==="circle_maj"){ func="五度圏（メジャー）"; body="このキーのメジャーダイアトニックを五度圏で。<b>隣り合うコードは共通音が多く滑らかに繋がる</b>。緑の塊がこのキーで使えるコード。"; reco="使えるコード： <b>"+recoNames.join(" / ")+"</b>"; }
   else if(mode==="circle_min"){ func="五度圏（マイナー）"; body="マイナーキーのダイアトニック。短調特有の暗さ・哀愁。<b>v→i や VII→III</b> の流れが軸。"; reco="使えるコード： <b>"+recoNames.join(" / ")+"</b>"; }
-  else if(mode==="major"){ func="メジャーおすすめ"; body="明るく素直なメジャーの基本7和音。まずここから組めば破綻しない。"; reco="使えるコード： <b>"+recoNames.join(" / ")+"</b>"; }
-  else if(mode==="minor"){ func="マイナー（Jazzy）"; body="m7・maj7中心の大人っぽい響き。<b>ii-V-i</b> がジャズ/シティポップの鍵。テンションで色気を。"; reco="使えるコード： <b>"+recoNames.join(" / ")+"</b>"; }
-  else if(mode==="function"){
+  else if(mode==="func_maj"||mode==="func_min"){
     if(curDeg>=0){
       const f=curFunc()[curDeg];func="機能： "+FUNC_NAME[f];
       const map={T:"安定したトニック。<b>サブドミナント</b>や<b>ドミナント</b>へ動くと曲が展開する。",
@@ -487,11 +505,12 @@ function renderExplain(){
   }
   else if(mode.startsWith("preset_")){
     const key=currentMode().preset;const list=FAMOUS_DEF[key];const p=list[st.presetIdx%list.length];
-    const labelMap={classic:"定番/王道",edm:"EDM",jazzy:"Jazzy"};
+    const labelMap={classic_maj:"定番（メジャー）",classic_min:"定番（マイナー）",edm_maj:"EDM（メジャー）",edm_min:"EDM（マイナー）",jazzy_maj:"Jazzy（メジャー）",jazzy_min:"Jazzy（マイナー）"};
     func=labelMap[key]+"： "+p.name;
     body="名前のついた定番進行。スロットに入るので鳴らして、なぜ気持ちいいか体で覚えよう。下のボタンで切替。";
+    const isJazzy=key.startsWith("jazzy");
     const sc=(p.scale==="major")?SCALE_MAJ:SCALE_MIN;
-    const dty=(p.scale==="major")?(key==="jazzy"?DIA7_MAJ:DIA_MAJ):(key==="jazzy"?DIA7_MIN:DIA_MIN);
+    const dty=(p.scale==="major")?(isJazzy?DIA7_MAJ:DIA_MAJ):(isJazzy?DIA7_MIN:DIA_MIN);
     reco="この進行： <b>"+p.degs.map(d=>chordLabel((st.keyRoot+sc[d])%12,typeById(dty[d]))).join(" → ")+"</b>";
   }
   $("exFunc").textContent=func;$("exBody").innerHTML=body;$("exReco").innerHTML=reco;
@@ -508,8 +527,9 @@ window.__pickPreset=function(i){
   st.presetIdx=i;
   const key=currentMode().preset;const list=FAMOUS_DEF[key];const p=list[i];
   st.scale=p.scale;
+  const isJazzy=key.startsWith("jazzy");
   const sc=(p.scale==="major")?SCALE_MAJ:SCALE_MIN;
-  const dty=(p.scale==="major")?(key==="jazzy"?DIA7_MAJ:DIA_MAJ):(key==="jazzy"?DIA7_MIN:DIA_MIN);
+  const dty=(p.scale==="major")?(isJazzy?DIA7_MAJ:DIA_MAJ):(isJazzy?DIA7_MIN:DIA_MIN);
   st.slots=p.degs.map(d=>{const pc=(st.keyRoot+sc[d])%12;const ty=typeById(dty[d]);return {name:chordLabel(pc,ty),notes:chordNotes(pc,ty),rootPc:pc,typeId:ty.id};});
   st.activeSlot=0;
   if(st.slots[0]){st.curRoot=st.slots[0].rootPc;st.curType=typeById(st.slots[0].typeId);}
@@ -554,6 +574,7 @@ function buildModes(){
       if(mo.scale)st.scale=mo.scale;
       st.presetIdx=0;
       buildModes();applyAll();
+      if(mo.preset)window.__pickPreset(0);
     });
     m.appendChild(b);
   });
